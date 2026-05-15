@@ -4,6 +4,8 @@ using System.Text;
 
 const int port = 5000;
 
+PrintHeader();
+
 var client = new TcpClient();
 client.Connect(IPAddress.Loopback, port);
 
@@ -21,27 +23,26 @@ var readerTask = Task.Run(() =>
         try { line = sr.ReadLine(); }
         catch
         {
-            Console.WriteLine("\nConnection broken.");
+            PrintEvent("Connection broken.");
             cts.Cancel();
             break;
         }
 
         if (line is null)
         {
-            Console.WriteLine("\nServer disconnected.");
+            PrintEvent("Server disconnected.");
             cts.Cancel();
             break;
         }
 
-        Console.Write("\r" + new string(' ', Console.WindowWidth - 1) + "\r");
-        Console.WriteLine($"[Server]: {line}");
-        Console.Write("> ");
+        PrintMessage(line);
+        PrintPrompt();
     }
 });
 
 while (!cts.Token.IsCancellationRequested)
 {
-    Console.Write("> ");
+    PrintPrompt();
     var input = Console.ReadLine();
 
     if (string.IsNullOrWhiteSpace(input)) continue;
@@ -53,7 +54,7 @@ while (!cts.Token.IsCancellationRequested)
     }
     catch
     {
-        Console.WriteLine("Failed to send message.");
+        PrintError("Failed to send message.");
         break;
     }
 
@@ -66,3 +67,100 @@ while (!cts.Token.IsCancellationRequested)
 
 stream.Close();
 client.Close();
+
+void PrintHeader()
+{
+    Console.Clear();
+    Console.ForegroundColor = ConsoleColor.Cyan;
+    Console.WriteLine();
+    Console.WriteLine("  ╔════════════════════════════════════════╗");
+    Console.WriteLine("  ║           💬  TCP Chat  v1.0            ║");
+    Console.WriteLine("  ╚════════════════════════════════════════╝");
+    Console.ResetColor();
+    PrintSeparator();
+}
+
+void PrintSeparator()
+{
+    Console.ForegroundColor = ConsoleColor.DarkGray;
+    Console.WriteLine("  ─────────────────────────────────────────");
+    Console.ResetColor();
+}
+
+void PrintPrompt()
+{
+    Console.ForegroundColor = ConsoleColor.DarkGreen;
+    Console.Write("\n  > ");
+    Console.ResetColor();
+}
+
+void PrintMessage(string line)
+{
+    var time = DateTime.Now.ToString("HH:mm");
+
+    Console.Write("\r" + new string(' ', Console.WindowWidth - 1) + "\r");
+
+    if (line.StartsWith(">>"))
+    {
+        Console.ForegroundColor = ConsoleColor.DarkYellow;
+        Console.WriteLine($"  {time}  {line}");
+        PrintSeparator();
+    }
+    else if (line.StartsWith("[") && line.Contains("]:"))
+    {
+        var nameEnd = line.IndexOf("]:");
+        var name = line[1..nameEnd];
+        var content = line[(nameEnd + 2)..].Trim();
+
+        Console.ForegroundColor = ConsoleColor.DarkGray;
+        Console.Write($"  {time}  ");
+
+        Console.ForegroundColor = ConsoleColor.Cyan;
+        Console.Write($"{name,-16}");
+
+        Console.ForegroundColor = ConsoleColor.DarkGray;
+        Console.Write("│  ");
+
+        Console.ForegroundColor = ConsoleColor.White;
+        Console.WriteLine(content);
+    }
+    else if (line.StartsWith("Online"))
+    {
+        Console.ForegroundColor = ConsoleColor.DarkGray;
+        Console.Write($"  {time}  ");
+        Console.ForegroundColor = ConsoleColor.Green;
+        Console.WriteLine(line);
+    }
+    else if (line.StartsWith("  •"))
+    {
+        Console.ForegroundColor = ConsoleColor.Green;
+        Console.WriteLine($"         {line}");
+    }
+    else
+    {
+        Console.ForegroundColor = ConsoleColor.DarkGray;
+        Console.Write($"  {time}  ");
+        Console.ForegroundColor = ConsoleColor.Yellow;
+        Console.Write("⚙  ");
+        Console.ForegroundColor = ConsoleColor.White;
+        Console.WriteLine(line);
+    }
+
+    Console.ResetColor();
+}
+
+void PrintError(string message)
+{
+    Console.Write("\r" + new string(' ', Console.WindowWidth - 1) + "\r");
+    Console.ForegroundColor = ConsoleColor.Red;
+    Console.WriteLine($"  {DateTime.Now:HH:mm}  ✖  {message}");
+    Console.ResetColor();
+}
+
+void PrintEvent(string message)
+{
+    Console.Write("\r" + new string(' ', Console.WindowWidth - 1) + "\r");
+    Console.ForegroundColor = ConsoleColor.DarkYellow;
+    Console.WriteLine($"  {DateTime.Now:HH:mm}  ⚡  {message}");
+    Console.ResetColor();
+}
