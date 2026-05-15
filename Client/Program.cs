@@ -7,13 +7,16 @@ const int port = 5000;
 var client = new TcpClient();
 client.Connect(IPAddress.Loopback, port);
 
+Console.WriteLine("Connected to server.");
+
 var stream = client.GetStream();
+var cts = new CancellationTokenSource();
 
 var reader = Task.Run(() =>
 {
     var buffer = new byte[1024];
 
-    while (true)
+    while (!cts.Token.IsCancellationRequested)
     {
         int bytesRead;
 
@@ -23,35 +26,49 @@ var reader = Task.Run(() =>
         }
         catch
         {
-            Console.WriteLine("Connection broken.");
+            Console.WriteLine("\nConnection broken.");
+            cts.Cancel();
             break;
         }
 
         if (bytesRead == 0)
         {
-            Console.WriteLine("Server disconnected.");
+            Console.WriteLine("\nServer disconnected.");
+            cts.Cancel();
             break;
         }
 
         var message = Encoding.UTF8.GetString(buffer, 0, bytesRead);
 
-        Console.WriteLine();
-        Console.WriteLine($"Server: {message}");
-        Console.Write("Client: ");
+        Console.Write("\r" + new string(' ', Console.WindowWidth - 1) + "\r");
+        Console.WriteLine($"[Server]: {message}");
+        Console.Write("> ");
     }
 });
 
-while (true)
+while (!cts.Token.IsCancellationRequested)
 {
-    Console.Write("Client: ");
-    var message = Console.ReadLine();
+    Console.Write("> ");
+    var input = Console.ReadLine();
 
-    var messageBytes = Encoding.UTF8.GetBytes(message!);
-    stream.Write(messageBytes, 0, messageBytes.Length);
+    if (string.IsNullOrWhiteSpace(input))
+        continue;
 
-    if (message == "exit")
+    try
     {
-        Console.WriteLine("Chat ended.");
+        var bytes = Encoding.UTF8.GetBytes(input);
+        stream.Write(bytes, 0, bytes.Length);
+    }
+    catch
+    {
+        Console.WriteLine("Failed to send message.");
+        break;
+    }
+
+    if (input == "exit")
+    {
+        Console.WriteLine("Disconnecting...");
+        cts.Cancel();
         break;
     }
 }
