@@ -1,0 +1,18 @@
+[
+  {
+    "Id": -1612027749,
+    "Username": "bob",
+    "DisplayName": "BOB",
+    "PasswordHash": "$2a$11$lgL7VAVICI1vYdAxxqNf9uD1T5wJWrBhICG0YOwloFYejYiuGTqj6",
+    "CreatedAt": "2026-05-15T18:53:00.7896478Z",
+    "LastLoginAt": null
+  },
+  {
+    "Id": 1640760360,
+    "Username": "kab",
+    "DisplayName": "KAB",
+    "PasswordHash": "$2a$11$X0lnSeNVCTPhifLrhZQKgOLzbM.Es4vWB0DuDHrX3M0yvEkGs3uIe",
+    "CreatedAt": "2026-05-15T18:53:50.4401819Z",
+    "LastLoginAt": null
+  }
+]

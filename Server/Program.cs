@@ -10,11 +10,11 @@ const int port = 5000;
 
 var listener = new TcpListener(IPAddress.Loopback, port);
 listener.Start();
-
 Console.WriteLine($"Server started on {IPAddress.Loopback}:{port}");
 
 var cts = new CancellationTokenSource();
-var clients = new ConcurrentDictionary<Guid, (TcpClient Client, User User)>();
+
+var clients = new ConcurrentDictionary<Guid, (TcpClient Client, User User, NetworkStream Stream)>();
 
 var repository = new UserRepository();
 var passwordHasher = new PasswordHasher();
@@ -22,31 +22,30 @@ var authService = new AuthService(repository, passwordHasher);
 
 Task.Run(() =>
 {
-    while (true)
+    while (!cts.Token.IsCancellationRequested)
     {
         var client = listener.AcceptTcpClient();
         Task.Run(() => HandleClient(client));
     }
 }, cts.Token);
 
-Console.Write("Server: ");
-var message = Console.ReadLine();
+Console.WriteLine("Type 'exit' to stop the server.");
+while (Console.ReadLine() != "exit") { }
 
-if (message == "exit")
-{
-    Console.WriteLine("Chat ended.");
-    cts.Cancel();
-}
-
+cts.Cancel();
 listener.Stop();
+Console.WriteLine("Server stopped.");
 
 void HandleClient(TcpClient client)
 {
-    Console.WriteLine();
-    Console.WriteLine("Client connected. Waiting for auth...");
-
     var stream = client.GetStream();
+
+    var sr = new StreamReader(stream, Encoding.UTF8, leaveOpen: true);
+
     User? authenticatedUser = null;
+    var clientId = Guid.NewGuid();
+
+    Console.WriteLine("New client connected, waiting for auth...");
 
     try
     {
@@ -56,18 +55,11 @@ void HandleClient(TcpClient client)
 
         while (authenticatedUser is null)
         {
-            var input = ReadFromClient(stream);
-
-            if (input is null)
-                return;
+            var input = sr.ReadLine();
+            if (input is null) return;
 
             var parts = input.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-
-            if (parts.Length == 0)
-            {
-                SendToClient(stream, "Unknown command.");
-                continue;
-            }
+            if (parts.Length == 0) continue;
 
             var command = parts[0].ToLower();
 
@@ -75,17 +67,13 @@ void HandleClient(TcpClient client)
             {
                 var (success, msg, user) = authService.Register(parts[1], parts[2], parts[3]);
                 SendToClient(stream, msg);
-
-                if (success)
-                    authenticatedUser = user;
+                if (success) authenticatedUser = user;
             }
             else if (command == "/login" && parts.Length == 3)
             {
                 var (success, msg, user) = authService.Login(parts[1], parts[2]);
                 SendToClient(stream, msg);
-
-                if (success)
-                    authenticatedUser = user;
+                if (success) authenticatedUser = user;
             }
             else
             {
@@ -93,61 +81,60 @@ void HandleClient(TcpClient client)
             }
         }
 
-        var clientId = Guid.NewGuid();
-        clients.TryAdd(clientId, (client, authenticatedUser));
-
+        clients.TryAdd(clientId, (client, authenticatedUser, stream));
         Console.WriteLine($"{authenticatedUser.DisplayName} ({authenticatedUser.Username}) joined.");
-        Console.Write("Server: ");
 
-        SendToClient(stream, "You are now in the chat! Type /online to see who's online.");
+        BroadcastToAll($">> {authenticatedUser.DisplayName} joined the chat.", excludeId: clientId);
+        SendToClient(stream, "You are now in the chat! Type /online to see who is online.");
 
         while (true)
         {
-            var input = ReadFromClient(stream);
-
-            if (input is null)
-                break;
+            var input = sr.ReadLine();
+            if (input is null) break;
+            if (string.IsNullOrWhiteSpace(input)) continue;
 
             if (input == "/online")
             {
-                var onlineList = string.Join(Environment.NewLine,
-                    clients.Values.Select(c => $"  {c.User.DisplayName} ({c.User.Username})"));
-
-                SendToClient(stream, $"Online:{Environment.NewLine}{onlineList}");
+                var list = string.Join("\n",
+                    clients.Values.Select(c => $"  • {c.User.DisplayName} ({c.User.Username})"));
+                SendToClient(stream, $"Online now:\n{list}");
+            }
+            else if (input.StartsWith("/"))
+            {
+                SendToClient(stream, $"Unknown command: {input}");
             }
             else
             {
-                SendToClient(stream, "Unknown command.");
+                BroadcastToAll($"[{authenticatedUser.DisplayName}]: {input}", excludeId: null);
+                Console.WriteLine($"[{authenticatedUser.DisplayName}]: {input}");
             }
         }
-
-        clients.TryRemove(clientId, out _);
-        Console.WriteLine($"{authenticatedUser.DisplayName} disconnected.");
-        Console.Write("Server: ");
     }
-    catch
+    catch { }
+    finally
     {
+        clients.TryRemove(clientId, out _);
+
         if (authenticatedUser is not null)
         {
-            Console.WriteLine($"{authenticatedUser.DisplayName} disconnected unexpectedly.");
-            Console.Write("Server: ");
+            Console.WriteLine($"{authenticatedUser.DisplayName} disconnected.");
+            BroadcastToAll($">> {authenticatedUser.DisplayName} left the chat.", excludeId: null);
         }
+    }
+}
+
+void BroadcastToAll(string message, Guid? excludeId)
+{
+    foreach (var (id, (_, _, clientStream)) in clients)
+    {
+        if (excludeId.HasValue && id == excludeId.Value) continue;
+        try { SendToClient(clientStream, message); }
+        catch { }
     }
 }
 
 void SendToClient(NetworkStream stream, string message)
 {
-    var data = Encoding.UTF8.GetBytes(message);
+    var data = Encoding.UTF8.GetBytes(message + "\n");
     stream.Write(data, 0, data.Length);
-}
-
-string? ReadFromClient(NetworkStream stream)
-{
-    var buffer = new byte[1024];
-    var read = stream.Read(buffer, 0, buffer.Length);
-
-    if (read == 0)
-        return null;
-
-    return Encoding.UTF8.GetString(buffer, 0, read);
 }
