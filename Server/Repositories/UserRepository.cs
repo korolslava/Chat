@@ -41,6 +41,10 @@ public class UserRepository : IUserRepository
             return [];
 
         var json = File.ReadAllText(FilePath);
+
+        if (string.IsNullOrWhiteSpace(json))
+            return [];
+
         return JsonSerializer.Deserialize<List<User>>(json) ?? [];
     }
 
